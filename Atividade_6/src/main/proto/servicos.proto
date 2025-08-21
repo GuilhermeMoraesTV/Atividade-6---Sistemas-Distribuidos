@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package monitoramento.grupoa;
+
+// Opções para a geração de código Java
+option java_multiple_files = true;
+option java_package = "monitoramento.grpc"; // Pacote onde as classes geradas ficarão
+
+// Serviço para o Grupo A
+service ServicoGrupoA {
+  // Método para as mensagens do algoritmo Bully
+  rpc EnviarMensagemBully(MensagemBully) returns (RespostaBully) {}
+  // Método para obter o estado de um nó
+  rpc ObterStatus(RequisicaoStatus) returns (RespostaStatus) {}
+}
+
+message MensagemBully {
+  enum Tipo {
+    ELEICAO = 0;
+    OK = 1;
+    COORDENADOR = 2;
+  }
+  Tipo tipo = 1;
+  int32 id_remetente = 2;
+  int32 relogio_lamport = 3;
+}
+
+message RespostaBully {
+  string status = 1;
+}
+
+message RequisicaoStatus {
+    int32 relogio_remetente = 1;
+}
+
+message RespostaStatus {
+    double uso_cpu = 1;
+    double uso_memoria = 2;
+    int64 memoria_total_gb = 3;
+    int64 tempo_atividade = 4;
+    int32 processadores = 5;
+    double carga_sistema = 6;
+    int32 relogio_no = 7;
+}
