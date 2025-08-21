@@ -1,178 +1,129 @@
 package monitoramento.intergrupo;
 
 import monitoramento.comum.Recurso;
-import java.net.*;
-import java.io.*;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
+import monitoramento.coordenacao.EmissorMulticast;
+import monitoramento.coordenacao.OuvinteMulticast;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
- * Classe responsável pela comunicação UDP Multicast entre os grupos A e B
- * Implementa o protocolo de troca de mensagens intergrupos
+ * Classe responsável pela comunicação entre diferentes grupos (A e B)
+ * Implementa descoberta, sincronização e coordenação intergrupos
  */
 public class ComunicacaoIntergrupos {
-    // Endereços e portas para comunicação intergrupos
-    private static final String ENDERECO_INTERGRUPOS = "239.0.0.4";
-    private static final int PORTA_INTERGRUPOS = 12348;
 
-    // Configurações
-    private static final int TIMEOUT_RESPOSTA_MS = 5000;
-    private static final int BUFFER_SIZE = 2048;
-
-    // Estado interno
     private final int idNo;
-    private final String tipoGrupo; // "A" ou "B"
-    private final AtomicBoolean ativo = new AtomicBoolean(true);
+    private final String tipoGrupo;
     private final Supplier<Integer> relogioSupplier;
     private final Supplier<Boolean> isLiderSupplier;
+    private final Consumer<String> processadorMensagens;
+    private final Supplier<Recurso> recursoSupplier;
 
-    // Callbacks para integração
-    private final Consumer<String> callbackMensagemRecebida;
-    private final Supplier<Recurso> callbackObterStatus;
+    // Comunicação multicast para intergrupos
+    private final EmissorMulticast emissor = new EmissorMulticast();
+    private final OuvinteMulticast ouvinte;
 
-    // Controle de comunicação
+    // Controle de grupos conhecidos
     private final Map<Integer, InfoGrupoRemoto> gruposConhecidos = new ConcurrentHashMap<>();
-    private MulticastSocket socketOuvinte;
-    private Thread threadOuvinte;
+    private final AtomicInteger mensagensEnviadas = new AtomicInteger(0);
+    private final AtomicInteger mensagensRecebidas = new AtomicInteger(0);
+    private final AtomicLong ultimoHeartbeatIntergrupos = new AtomicLong(System.currentTimeMillis());
 
-    // Estatísticas
-    private int mensagensEnviadas = 0;
-    private int mensagensRecebidas = 0;
+    // Configurações de comunicação intergrupos
+    private static final String ENDERECO_INTERGRUPOS = "239.0.0.4";
+    private static final int PORTA_INTERGRUPOS = 12348;
+    private static final long TIMEOUT_DESCOBERTA_MS = 30000; // 30 segundos
+    private static final long INTERVALO_HEARTBEAT_MS = 15000; // 15 segundos
 
     public ComunicacaoIntergrupos(int idNo, String tipoGrupo,
                                   Supplier<Integer> relogioSupplier,
                                   Supplier<Boolean> isLiderSupplier,
-                                  Consumer<String> callbackMensagemRecebida,
-                                  Supplier<Recurso> callbackObterStatus) {
+                                  Consumer<String> processadorMensagens,
+                                  Supplier<Recurso> recursoSupplier) {
         this.idNo = idNo;
         this.tipoGrupo = tipoGrupo;
         this.relogioSupplier = relogioSupplier;
         this.isLiderSupplier = isLiderSupplier;
-        this.callbackMensagemRecebida = callbackMensagemRecebida;
-        this.callbackObterStatus = callbackObterStatus;
+        this.processadorMensagens = processadorMensagens;
+        this.recursoSupplier = recursoSupplier;
 
-        iniciarOuvinte();
+        // Inicializar ouvinte para mensagens intergrupos
+        this.ouvinte = new OuvinteMulticast(PORTA_INTERGRUPOS, ENDERECO_INTERGRUPOS,
+                this::processarMensagemIntergrupos);
+        new Thread(this.ouvinte).start();
 
-        System.out.printf("[INTERGRUPOS P%d-%s] Comunicação intergrupos iniciada%n",
-                idNo, tipoGrupo);
+        System.out.printf("[INTERGRUPOS P%d-%s] Comunicação intergrupos inicializada%n", idNo, tipoGrupo);
     }
 
     /**
-     * Inicia o ouvinte para mensagens multicast intergrupos
+     * Processa mensagens recebidas de outros grupos
      */
-    private void iniciarOuvinte() {
-        threadOuvinte = new Thread(() -> {
-            try {
-                socketOuvinte = new MulticastSocket(PORTA_INTERGRUPOS);
-                InetAddress grupoMulticast = InetAddress.getByName(ENDERECO_INTERGRUPOS);
-                socketOuvinte.joinGroup(grupoMulticast);
-                socketOuvinte.setSoTimeout(1000); // Timeout para verificar se ainda está ativo
+    private void processarMensagemIntergrupos(String mensagem) {
+        mensagensRecebidas.incrementAndGet();
 
-                byte[] buffer = new byte[BUFFER_SIZE];
-
-                while (ativo.get()) {
-                    try {
-                        DatagramPacket pacote = new DatagramPacket(buffer, buffer.length);
-                        socketOuvinte.receive(pacote);
-
-                        String mensagem = new String(pacote.getData(), 0, pacote.getLength());
-                        processarMensagemRecebida(mensagem);
-
-                    } catch (SocketTimeoutException e) {
-                        // Timeout normal, continua o loop
-                    } catch (IOException e) {
-                        if (ativo.get()) {
-                            System.err.printf("[ERRO INTERGRUPOS P%d-%s] Erro ao receber mensagem: %s%n",
-                                    idNo, tipoGrupo, e.getMessage());
-                        }
-                    }
-                }
-
-            } catch (Exception e) {
-                System.err.printf("[ERRO INTERGRUPOS P%d-%s] Erro no ouvinte: %s%n",
-                        idNo, tipoGrupo, e.getMessage());
-            } finally {
-                if (socketOuvinte != null && !socketOuvinte.isClosed()) {
-                    socketOuvinte.close();
-                }
-            }
-        });
-
-        threadOuvinte.start();
-    }
-
-    /**
-     * Processa mensagens recebidas via multicast
-     */
-    private void processarMensagemRecebida(String mensagem) {
         try {
-            String[] partes = mensagem.split("\\|");
-            if (partes.length < 4) return;
+            String[] partes = mensagem.split(":", 3);
+            if (partes.length < 2) return;
 
-            String tipo = partes[0];
-            int idRemetente = Integer.parseInt(partes[1]);
-            String grupoRemetente = partes[2];
-            int relogioRemetente = Integer.parseInt(partes[3]);
-            String payload = partes.length > 4 ? partes[4] : "";
+            String tipoMensagem = partes[0];
+            String remetenteInfo = partes[1]; // formato: "idNo-tipoGrupo"
+
+            // Extrair informações do remetente
+            String[] infoRemetente = remetenteInfo.split("-");
+            if (infoRemetente.length != 2) return;
+
+            int idRemetente = Integer.parseInt(infoRemetente[0]);
+            String grupoRemetente = infoRemetente[1];
 
             // Ignorar mensagens do próprio grupo
             if (grupoRemetente.equals(this.tipoGrupo)) {
                 return;
             }
 
-            // Atualizar relógio de Lamport
-            int relogioAtual = relogioSupplier.get();
-            int novoRelogio = Math.max(relogioAtual, relogioRemetente) + 1;
-            // Note: O supplier não pode ser usado para set, isso deve ser feito na classe pai
+            // Atualizar informações do grupo remoto
+            atualizarGrupoRemoto(idRemetente, grupoRemetente);
 
-            // Atualizar informações sobre o grupo remoto
-            atualizarInfoGrupoRemoto(idRemetente, grupoRemetente);
+            System.out.printf("[INTERGRUPOS P%d-%s] Recebido de P%d-%s: %s%n",
+                    idNo, tipoGrupo, idRemetente, grupoRemetente, tipoMensagem);
 
-            mensagensRecebidas++;
-
-            System.out.printf("[INTERGRUPOS P%d-%s] <- %s de P%d-%s (relógio: %d->%d)%n",
-                    idNo, tipoGrupo, tipo, idRemetente, grupoRemetente,
-                    relogioRemetente, novoRelogio);
-
-            // Processar diferentes tipos de mensagens
-            switch (tipo) {
-                case "PING_INTERGRUPO":
-                    responderPingIntergrupo(idRemetente, grupoRemetente);
+            // Processar diferentes tipos de mensagem
+            switch (tipoMensagem) {
+                case "PING_INTER":
+                    processarPingIntergrupos(idRemetente, grupoRemetente);
                     break;
 
-                case "PONG_INTERGRUPO":
-                    processarPongIntergrupo(idRemetente, grupoRemetente);
+                case "PONG_INTER":
+                    processarPongIntergrupos(idRemetente, grupoRemetente);
                     break;
 
                 case "STATUS_REQUEST":
-                    responderStatusIntergrupo(idRemetente, grupoRemetente);
+                    processarSolicitacaoStatus(idRemetente, grupoRemetente);
                     break;
 
                 case "STATUS_RESPONSE":
-                    processarStatusIntergrupo(payload, idRemetente, grupoRemetente);
+                    processarRespostaStatus(idRemetente, grupoRemetente, partes.length > 2 ? partes[2] : "");
                     break;
 
-                case "MARCADOR_SNAPSHOT":
-                    processarMarcadorSnapshot(idRemetente, grupoRemetente, payload);
+                case "SUPER_CANDIDATE":
+                    processarCandidaturaSuper(idRemetente, grupoRemetente, partes.length > 2 ? partes[2] : "");
                     break;
 
-                case "ELEICAO_SUPER":
-                    processarEleicaoSuper(payload, idRemetente, grupoRemetente);
+                case "SNAPSHOT_GLOBAL":
+                    processarSnapshotGlobal(idRemetente, grupoRemetente, partes.length > 2 ? partes[2] : "");
                     break;
 
                 default:
-                    System.out.printf("[INTERGRUPOS P%d-%s] Tipo de mensagem desconhecido: %s%n",
-                            idNo, tipoGrupo, tipo);
-            }
-
-            // Notificar callback se fornecido
-            if (callbackMensagemRecebida != null) {
-                callbackMensagemRecebida.accept(mensagem);
+                    // Repassar para processador personalizado
+                    if (processadorMensagens != null) {
+                        processadorMensagens.accept(mensagem);
+                    }
+                    break;
             }
 
         } catch (Exception e) {
@@ -182,55 +133,96 @@ public class ComunicacaoIntergrupos {
     }
 
     /**
-     * Envia mensagem via UDP Multicast para outros grupos
+     * Processa ping de outro grupo
      */
-    private void enviarMensagem(String tipo, String payload) {
-        try (DatagramSocket socket = new DatagramSocket()) {
-            String mensagem = String.format("%s|%d|%s|%d|%s",
-                    tipo, idNo, tipoGrupo,
-                    relogioSupplier.get(), payload);
-
-            byte[] dados = mensagem.getBytes("UTF-8");
-            InetAddress endereco = InetAddress.getByName(ENDERECO_INTERGRUPOS);
-            DatagramPacket pacote = new DatagramPacket(dados, dados.length,
-                    endereco, PORTA_INTERGRUPOS);
-
-            socket.send(pacote);
-            mensagensEnviadas++;
-
-            System.out.printf("[INTERGRUPOS P%d-%s] -> %s enviado (%d bytes)%n",
-                    idNo, tipoGrupo, tipo, dados.length);
-
-        } catch (Exception e) {
-            System.err.printf("[ERRO INTERGRUPOS P%d-%s] Erro ao enviar %s: %s%n",
-                    idNo, tipoGrupo, tipo, e.getMessage());
+    private void processarPingIntergrupos(int idRemetente, String grupoRemetente) {
+        if (isLiderSupplier.get()) {
+            // Responder apenas se for líder do meu grupo
+            enviarMensagemIntergrupos("PONG_INTER", "");
+            System.out.printf("[INTERGRUPOS P%d-%s] Respondido ping de P%d-%s%n",
+                    idNo, tipoGrupo, idRemetente, grupoRemetente);
         }
+    }
+
+    /**
+     * Processa pong de outro grupo
+     */
+    private void processarPongIntergrupos(int idRemetente, String grupoRemetente) {
+        System.out.printf("[INTERGRUPOS P%d-%s] Confirmação de vida de P%d-%s%n",
+                idNo, tipoGrupo, idRemetente, grupoRemetente);
+        ultimoHeartbeatIntergrupos.set(System.currentTimeMillis());
+    }
+
+    /**
+     * Processa solicitação de status
+     */
+    private void processarSolicitacaoStatus(int idRemetente, String grupoRemetente) {
+        if (isLiderSupplier.get()) {
+            // Enviar status apenas se for líder
+            Recurso recurso = recursoSupplier.get();
+            String dadosStatus = String.format("relogio=%d,cpu=%.2f,memoria=%.2f",
+                    recurso.getRelogioLamport(), recurso.getUsoCpu(), recurso.getUsoMemoria());
+
+            enviarMensagemIntergrupos("STATUS_RESPONSE", dadosStatus);
+        }
+    }
+
+    /**
+     * Processa resposta de status
+     */
+    private void processarRespostaStatus(int idRemetente, String grupoRemetente, String dadosStatus) {
+        System.out.printf("[INTERGRUPOS P%d-%s] Status recebido de P%d-%s: %s%n",
+                idNo, tipoGrupo, idRemetente, grupoRemetente, dadosStatus);
+
+        // Atualizar dados do grupo remoto
+        InfoGrupoRemoto info = gruposConhecidos.get(idRemetente);
+        if (info != null) {
+            info.atualizarStatus(dadosStatus);
+        }
+    }
+
+    /**
+     * Processa candidatura para supercoordenador
+     */
+    private void processarCandidaturaSuper(int idRemetente, String grupoRemetente, String dadosCandidatura) {
+        String mensagemProcessada = String.format("SUPER_ELECTION:candidato:%d-%s,prioridade:%s",
+                idRemetente, grupoRemetente, dadosCandidatura);
+
+        if (processadorMensagens != null) {
+            processadorMensagens.accept(mensagemProcessada);
+        }
+    }
+
+    /**
+     * Processa snapshot global
+     */
+    private void processarSnapshotGlobal(int idRemetente, String grupoRemetente, String dadosSnapshot) {
+        String mensagemProcessada = String.format("SNAPSHOT_MARKER:%s", dadosSnapshot);
+
+        if (processadorMensagens != null) {
+            processadorMensagens.accept(mensagemProcessada);
+        }
+    }
+
+    /**
+     * Atualiza informações de um grupo remoto
+     */
+    private void atualizarGrupoRemoto(int idRemetente, String grupoRemetente) {
+        gruposConhecidos.computeIfAbsent(idRemetente,
+                k -> new InfoGrupoRemoto(idRemetente, grupoRemetente));
+
+        InfoGrupoRemoto info = gruposConhecidos.get(idRemetente);
+        info.atualizarUltimoContato();
     }
 
     /**
      * Envia ping para descobrir outros grupos
      */
     public void enviarPingIntergrupo() {
-        enviarMensagem("PING_INTERGRUPO",
-                "timestamp:" + System.currentTimeMillis());
-    }
-
-    /**
-     * Responde a um ping intergrupo
-     */
-    private void responderPingIntergrupo(int idRemetente, String grupoRemetente) {
-        String resposta = String.format("resposta_para:%d-%s,meu_status:%s",
-                idRemetente, grupoRemetente,
-                isLiderSupplier.get() ? "LIDER" : "MEMBRO");
-        enviarMensagem("PONG_INTERGRUPO", resposta);
-    }
-
-    /**
-     * Processa resposta de ping intergrupo
-     */
-    private void processarPongIntergrupo(int idRemetente, String grupoRemetente) {
-        System.out.printf("[INTERGRUPOS P%d-%s] Grupo %s está ativo (líder: P%d)%n",
-                idNo, tipoGrupo, grupoRemetente, idRemetente);
+        if (isLiderSupplier.get()) {
+            enviarMensagemIntergrupos("PING_INTER", "");
+            System.out.printf("[INTERGRUPOS P%d-%s] Ping enviado para descoberta de grupos%n", idNo, tipoGrupo);
+        }
     }
 
     /**
@@ -238,122 +230,86 @@ public class ComunicacaoIntergrupos {
      */
     public void solicitarStatusIntergrupo() {
         if (isLiderSupplier.get()) {
-            enviarMensagem("STATUS_REQUEST", "solicitacao_status_global");
+            enviarMensagemIntergrupos("STATUS_REQUEST", "");
         }
     }
 
     /**
-     * Responde com status do grupo
-     */
-    private void responderStatusIntergrupo(int idRemetente, String grupoRemetente) {
-        if (isLiderSupplier.get()) {
-            try {
-                Recurso status = callbackObterStatus.get();
-                String statusPayload = String.format("grupo:%s,cpu:%.2f,memoria:%.2f,timestamp:%s",
-                        tipoGrupo, status.getUsoCpu(),
-                        status.getUsoMemoria(),
-                        LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
-                enviarMensagem("STATUS_RESPONSE", statusPayload);
-            } catch (Exception e) {
-                System.err.printf("[ERRO INTERGRUPOS P%d-%s] Erro ao obter status: %s%n",
-                        idNo, tipoGrupo, e.getMessage());
-            }
-        }
-    }
-
-    /**
-     * Processa status recebido de outros grupos
-     */
-    private void processarStatusIntergrupo(String payload, int idRemetente, String grupoRemetente) {
-        System.out.printf("[INTERGRUPOS P%d-%s] Status do Grupo %s: %s%n",
-                idNo, tipoGrupo, grupoRemetente, payload);
-    }
-
-    /**
-     * Envia marcador de snapshot para outros grupos
-     */
-    public void enviarMarcadorSnapshot(String idSnapshot) {
-        String payload = String.format("snapshot_id:%s,timestamp:%s,iniciador:%d-%s",
-                idSnapshot,
-                LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS")),
-                idNo, tipoGrupo);
-        enviarMensagem("MARCADOR_SNAPSHOT", payload);
-    }
-
-    /**
-     * Processa marcador de snapshot de outros grupos
-     */
-    private void processarMarcadorSnapshot(int idRemetente, String grupoRemetente, String payload) {
-        System.out.printf("[SNAPSHOT INTERGRUPOS P%d-%s] Marcador recebido de P%d-%s: %s%n",
-                idNo, tipoGrupo, idRemetente, grupoRemetente, payload);
-
-        // Notificar o gestor de snapshot local
-        if (callbackMensagemRecebida != null) {
-            callbackMensagemRecebida.accept("SNAPSHOT_MARKER:" + payload);
-        }
-    }
-
-    /**
-     * Envia candidatura para eleição de supercoordenador
+     * Envia candidatura para supercoordenador
      */
     public void enviarCandidaturaSuper() {
         if (isLiderSupplier.get()) {
-            String payload = String.format("candidato:%d-%s,prioridade:%d,timestamp:%s",
-                    idNo, tipoGrupo, idNo,
-                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
-            enviarMensagem("ELEICAO_SUPER", payload);
+            String dadosCandidatura = String.format("relogio=%d,prioridade=%d",
+                    relogioSupplier.get(), idNo);
+            enviarMensagemIntergrupos("SUPER_CANDIDATE", dadosCandidatura);
+            System.out.printf("[INTERGRUPOS P%d-%s] Candidatura para supercoordenador enviada%n", idNo, tipoGrupo);
         }
     }
 
     /**
-     * Processa mensagens de eleição de supercoordenador
+     * Envia marcador de snapshot global
      */
-    private void processarEleicaoSuper(String payload, int idRemetente, String grupoRemetente) {
-        System.out.printf("[ELEICAO SUPER P%d-%s] Candidato: P%d-%s (%s)%n",
-                idNo, tipoGrupo, idRemetente, grupoRemetente, payload);
-
-        // Notificar callback para processar eleição
-        if (callbackMensagemRecebida != null) {
-            callbackMensagemRecebida.accept("SUPER_ELECTION:" + payload);
+    public void enviarMarcadorSnapshot(String idSnapshot) {
+        if (isLiderSupplier.get()) {
+            String dadosSnapshot = String.format("id=%s,relogio=%d,timestamp=%s",
+                    idSnapshot, relogioSupplier.get(),
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS")));
+            enviarMensagemIntergrupos("SNAPSHOT_GLOBAL", dadosSnapshot);
         }
     }
 
     /**
-     * Atualiza informações sobre grupos remotos
+     * Método genérico para enviar mensagens intergrupos
      */
-    private void atualizarInfoGrupoRemoto(int idRemoto, String grupoRemoto) {
-        InfoGrupoRemoto info = gruposConhecidos.computeIfAbsent(idRemoto,
-                k -> new InfoGrupoRemoto(idRemoto, grupoRemoto));
-        info.atualizarUltimoContato();
+    private void enviarMensagemIntergrupos(String tipo, String payload) {
+        String remetenteInfo = String.format("%d-%s", idNo, tipoGrupo);
+        String mensagem = payload.isEmpty() ?
+                String.format("%s:%s", tipo, remetenteInfo) :
+                String.format("%s:%s:%s", tipo, remetenteInfo, payload);
+
+        emissor.enviarMensagem(mensagem, ENDERECO_INTERGRUPOS, PORTA_INTERGRUPOS);
+        mensagensEnviadas.incrementAndGet();
     }
 
     /**
-     * Gera relatório de comunicação intergrupos
+     * Gera relatório da comunicação intergrupos
      */
     public String gerarRelatorioIntergrupos() {
         StringBuilder relatorio = new StringBuilder();
-        relatorio.append("\n").append("=".repeat(60)).append("\n");
-        relatorio.append("     RELATÓRIO DE COMUNICAÇÃO INTERGRUPOS\n");
-        relatorio.append("=".repeat(60)).append("\n");
+        relatorio.append("\n").append("=".repeat(70)).append("\n");
+        relatorio.append("         RELATÓRIO DE COMUNICAÇÃO INTERGRUPOS\n");
+        relatorio.append("=".repeat(70)).append("\n");
         relatorio.append(String.format("Nó: P%d-%s | Status: %s%n",
-                idNo, tipoGrupo,
-                isLiderSupplier.get() ? "LÍDER" : "MEMBRO"));
-        relatorio.append(String.format("Mensagens Enviadas: %d | Recebidas: %d%n",
-                mensagensEnviadas, mensagensRecebidas));
-        relatorio.append("-".repeat(60)).append("\n");
+                idNo, tipoGrupo, isLiderSupplier.get() ? "LÍDER" : "SEGUIDOR"));
+        relatorio.append(String.format("Timestamp: %s%n",
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"))));
+        relatorio.append("-".repeat(70)).append("\n");
 
+        // Estatísticas de comunicação
+        relatorio.append("ESTATÍSTICAS DE COMUNICAÇÃO:\n");
+        relatorio.append(String.format("  • Mensagens enviadas: %d%n", mensagensEnviadas.get()));
+        relatorio.append(String.format("  • Mensagens recebidas: %d%n", mensagensRecebidas.get()));
+        relatorio.append(String.format("  • Grupos conhecidos: %d%n", gruposConhecidos.size()));
+
+        long ultimoHeartbeat = (System.currentTimeMillis() - ultimoHeartbeatIntergrupos.get()) / 1000;
+        relatorio.append(String.format("  • Último heartbeat: %ds atrás%n", ultimoHeartbeat));
+
+        // Grupos conhecidos
+        relatorio.append("\nGRUPOS REMOTOS CONHECIDOS:\n");
         if (gruposConhecidos.isEmpty()) {
-            relatorio.append("Nenhum grupo remoto descoberto\n");
+            relatorio.append("  • Nenhum grupo remoto descoberto\n");
         } else {
-            relatorio.append("GRUPOS REMOTOS CONHECIDOS:\n");
-            gruposConhecidos.forEach((id, info) -> {
-                long ultimoContato = (System.currentTimeMillis() - info.getUltimoContato()) / 1000;
-                relatorio.append(String.format("  • P%d-%s: último contato há %ds%n",
-                        id, info.getTipoGrupo(), ultimoContato));
+            gruposConhecidos.values().forEach(info -> {
+                long tempoContato = (System.currentTimeMillis() - info.getUltimoContato()) / 1000;
+                relatorio.append(String.format("  • P%d-%s: ativo há %ds (status: %s)%n",
+                        info.getId(), info.getTipoGrupo(), tempoContato, info.getStatusInfo()));
             });
         }
 
-        relatorio.append("=".repeat(60)).append("\n");
+        relatorio.append("-".repeat(70)).append("\n");
+        relatorio.append("STATUS: COMUNICAÇÃO INTERGRUPOS ATIVA\n");
+        relatorio.append("=".repeat(70)).append("\n");
+
         return relatorio.toString();
     }
 
@@ -361,46 +317,60 @@ public class ComunicacaoIntergrupos {
      * Para a comunicação intergrupos
      */
     public void parar() {
-        ativo.set(false);
-
-        if (threadOuvinte != null) {
-            threadOuvinte.interrupt();
+        if (ouvinte != null) {
+            ouvinte.parar();
         }
-
-        if (socketOuvinte != null && !socketOuvinte.isClosed()) {
-            socketOuvinte.close();
-        }
-
-        System.out.printf("[INTERGRUPOS P%d-%s] Comunicação intergrupos encerrada%n",
-                idNo, tipoGrupo);
+        System.out.printf("[INTERGRUPOS P%d-%s] Comunicação intergrupos encerrada%n", idNo, tipoGrupo);
     }
 
-    // Getters para estatísticas
-    public int getMensagensEnviadas() { return mensagensEnviadas; }
-    public int getMensagensRecebidas() { return mensagensRecebidas; }
-    public Map<Integer, InfoGrupoRemoto> getGruposConhecidos() { return new HashMap<>(gruposConhecidos); }
+    // Getters
+    public Map<Integer, InfoGrupoRemoto> getGruposConhecidos() {
+        return new ConcurrentHashMap<>(gruposConhecidos);
+    }
+
+    public int getMensagensEnviadas() { return mensagensEnviadas.get(); }
+    public int getMensagensRecebidas() { return mensagensRecebidas.get(); }
 
     /**
-     * Classe interna para armazenar informações sobre grupos remotos
+     * Classe para armazenar informações de grupos remotos
      */
     public static class InfoGrupoRemoto {
         private final int id;
         private final String tipoGrupo;
-        private long ultimoContato;
+        private volatile long ultimoContato;
+        private volatile String statusInfo = "DESCOBERTO";
 
         public InfoGrupoRemoto(int id, String tipoGrupo) {
             this.id = id;
             this.tipoGrupo = tipoGrupo;
             this.ultimoContato = System.currentTimeMillis();
+            System.out.printf("[INTERGRUPOS] Grupo remoto registrado: P%d-%s%n", id, tipoGrupo);
         }
 
         public void atualizarUltimoContato() {
             this.ultimoContato = System.currentTimeMillis();
         }
 
+        public void atualizarStatus(String novoStatus) {
+            this.statusInfo = novoStatus;
+            atualizarUltimoContato();
+            System.out.printf("[INTERGRUPOS] Status atualizado P%d-%s: %s%n", id, tipoGrupo, novoStatus);
+        }
+
+        public boolean isAtivo(long timeoutMs) {
+            long tempoDecorrido = System.currentTimeMillis() - ultimoContato;
+            return tempoDecorrido < timeoutMs;
+        }
+
+        public long getTempoSemContato() {
+            return (System.currentTimeMillis() - ultimoContato) / 1000; // em segundos
+        }
+
         // Getters
         public int getId() { return id; }
         public String getTipoGrupo() { return tipoGrupo; }
         public long getUltimoContato() { return ultimoContato; }
+        public String getStatusInfo() { return statusInfo; }
     }
+
 }

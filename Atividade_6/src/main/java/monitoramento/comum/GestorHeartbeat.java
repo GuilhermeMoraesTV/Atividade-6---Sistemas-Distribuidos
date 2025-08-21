@@ -24,6 +24,14 @@ public class GestorHeartbeat implements Runnable {
 
     @Override
     public void run() {
+        // Aguardar inicialização completa
+        try {
+            Thread.sleep(10000); // 10 segundos para inicialização
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+
         while (true) {
             try {
                 Thread.sleep(5000);
@@ -42,11 +50,13 @@ public class GestorHeartbeat implements Runnable {
                         PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                         BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                         out.println("PING");
-                        if ("PONG".equals(in.readLine())) {
+
+                        String resposta = in.readLine();
+                        if ("PONG".equals(resposta)) {
                             isAlvoAtivo = true;
                         }
                     } catch (Exception e) {
-                        // Falha na comunicação
+                        // Falha na comunicação - nó pode estar inativo
                     }
 
                     if (isAlvoAtivo) {
@@ -57,6 +67,8 @@ public class GestorHeartbeat implements Runnable {
                         noAlvo.setAtivo(true);
                     } else {
                         noAlvo.incrementarContadorFalhas();
+
+                        // Só considerar falho após várias tentativas consecutivas
                         if (noAlvo.getContadorFalhas() >= 3 && noAlvo.isAtivo()) {
                             System.err.printf("[FALHA] Nó %d detectou: NÓ %d CONSIDERADO FALHO!%n", idSupplier.get(), idAlvo);
                             noAlvo.setAtivo(false);
@@ -71,6 +83,23 @@ public class GestorHeartbeat implements Runnable {
                 Thread.currentThread().interrupt();
                 break;
             }
+        }
+    }
+
+    private boolean testarConexaoNo(int idAlvo, InfoNo noAlvo) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", noAlvo.getPortaHeartbeat()), TIMEOUT_MS);
+            socket.setSoTimeout(TIMEOUT_MS);
+
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+            out.println("PING");
+            String resposta = in.readLine();
+
+            return "PONG".equals(resposta);
+        } catch (Exception e) {
+            return false;
         }
     }
 }

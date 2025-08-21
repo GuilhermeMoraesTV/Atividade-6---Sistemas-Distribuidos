@@ -39,6 +39,8 @@ public class SuperCoordenador {
     private final Map<String, EstadoGrupo> estadosGrupos = new ConcurrentHashMap<>();
     private final AtomicInteger contadorSnapshots = new AtomicInteger(0);
     private final Map<String, Long> historicoSnapshots = new ConcurrentHashMap<>();
+    private static final AtomicInteger contadorSupercoordenadores = new AtomicInteger(0);
+    private static volatile Integer supercoordenadorGlobalAtivo = null;
 
     // Configurações
     private static final int INTERVALO_MONITORAMENTO_GLOBAL_SEGUNDOS = 30;
@@ -70,24 +72,28 @@ public class SuperCoordenador {
      * Ativa o supercoordenador e inicia suas responsabilidades
      */
     public synchronized void ativarComoSupercoordenador() {
-        if (isSupercoordenador.getAndSet(true)) {
-            System.out.printf("[SUPER-COORD P%d-%s] Já sou supercoordenador%n", idNo, tipoGrupo);
+        // Verificar se já existe supercoordenador global
+        if (supercoordenadorGlobalAtivo != null && supercoordenadorGlobalAtivo != this.idNo) {
+            System.out.printf("[SUPER-COORD P%d-%s] Supercoordenador P%d já ativo, aguardando...%n",
+                    idNo, tipoGrupo, supercoordenadorGlobalAtivo);
             return;
         }
 
+        if (isSupercoordenador.getAndSet(true)) {
+            return;
+        }
+
+        // Definir como supercoordenador global ativo
+        supercoordenadorGlobalAtivo = this.idNo;
+        contadorSupercoordenadores.incrementAndGet();
         ativo.set(true);
 
         System.out.printf("%n[SUPER-COORD P%d-%s] *** ATIVADO COMO SUPERCOORDENADOR GLOBAL! ***%n",
                 idNo, tipoGrupo);
 
-        // Notificar sobre nova responsabilidade
         notificarEvento("SUPERCOORDENADOR GLOBAL ATIVADO: P" + idNo + "-" + tipoGrupo);
-
-        // Iniciar todas as tarefas do supercoordenador
         iniciarTarefasSupercoordenador();
-
-        // Enviar primeiro snapshot global
-        agendarProximoSnapshotGlobal(5); // Primeiro em 5 segundos
+        agendarProximoSnapshotGlobal(10); // Aumentar delay inicial
     }
 
     /**
@@ -100,16 +106,21 @@ public class SuperCoordenador {
 
         ativo.set(false);
 
+        // Limpar referência global se sou eu
+        if (supercoordenadorGlobalAtivo != null && supercoordenadorGlobalAtivo.equals(this.idNo)) {
+            supercoordenadorGlobalAtivo = null;
+        }
+
+        contadorSupercoordenadores.decrementAndGet();
+
         System.out.printf("[SUPER-COORD P%d-%s] Supercoordenador desativado%n", idNo, tipoGrupo);
 
-        // Cancelar todas as tarefas agendadas
+        // Cancelar tarefas
         tarefasAgendadas.forEach((nome, tarefa) -> {
             tarefa.cancel(true);
-            System.out.printf("[SUPER-COORD P%d-%s] Tarefa '%s' cancelada%n", idNo, tipoGrupo, nome);
         });
         tarefasAgendadas.clear();
 
-        // Notificar sobre desativação
         notificarEvento("SUPERCOORDENADOR DESATIVADO: P" + idNo + "-" + tipoGrupo);
     }
 

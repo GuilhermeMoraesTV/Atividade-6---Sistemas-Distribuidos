@@ -282,38 +282,43 @@ public class NoGrupoA {
         if (emEleicao.getAndSet(true)) return;
 
         System.out.printf("[BULLY P%d] Iniciando eleição Bully%n", id);
+        notificarEvento("ELEIÇÃO BULLY INICIADA POR P" + id);
+
         this.respondeuOk.set(false);
 
         List<Integer> pidsMaiores = todosPidsDoGrupo.stream()
-                .filter(p -> p > this.id)
+                .filter(p -> p > this.id && nosDaRede.get(p).isAtivo())
                 .collect(Collectors.toList());
 
         boolean algumMaiorContactado = false;
         for (int pidMaior : pidsMaiores) {
-            if (nosDaRede.get(pidMaior).isAtivo()) {
+            try {
                 enviarMensagemBully(pidMaior, MensagemBully.Tipo.ELEICAO);
                 algumMaiorContactado = true;
+            } catch (Exception e) {
+                // Nó não respondeu, marcar como inativo
+                nosDaRede.get(pidMaior).setAtivo(false);
             }
         }
 
         if (!algumMaiorContactado) {
-            anunciarCoordenador();
+            // Aguardar um tempo antes de assumir liderança para evitar conflitos
+            scheduler.schedule(() -> {
+                if (!this.respondeuOk.get()) {
+                    anunciarCoordenador();
+                }
+            }, 2000 + (id * 1000), TimeUnit.MILLISECONDS); // Delay baseado no ID
             return;
         }
 
-        // Aguardar resposta OK
-        new Thread(() -> {
-            try {
-                Thread.sleep(3000);
-                if (!this.respondeuOk.get()) {
-                    anunciarCoordenador();
-                } else {
-                    emEleicao.set(false);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        // Aguardar resposta OK com timeout maior
+        scheduler.schedule(() -> {
+            if (!this.respondeuOk.get()) {
+                anunciarCoordenador();
+            } else {
+                emEleicao.set(false);
             }
-        }).start();
+        }, 5000, TimeUnit.MILLISECONDS);
     }
 
     private void anunciarCoordenador() {
