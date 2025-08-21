@@ -8,7 +8,6 @@ import java.net.Socket;
 import java.util.Map;
 import java.util.function.Supplier;
 
-// CORRIGIDO: A importação de Consumer<String> foi removida, pois não é mais necessária.
 public class GestorHeartbeat implements Runnable {
     private final Supplier<Integer> idSupplier;
     private final Supplier<Integer> coordenadorIdSupplier;
