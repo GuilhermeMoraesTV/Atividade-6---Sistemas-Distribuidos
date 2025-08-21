@@ -6,6 +6,8 @@ import monitoramento.autenticacao.ServidorAutenticacao;
 import monitoramento.comum.*;
 import monitoramento.coordenacao.EmissorMulticast;
 import monitoramento.coordenacao.OuvinteMulticast;
+import monitoramento.coordenacao.SuperCoordenador;
+import monitoramento.intergrupo.ComunicacaoIntergrupos;
 import monitoramento.grpc.*;
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -44,6 +46,10 @@ public class NoGrupoA {
     private final List<Integer> candidatosSuperCoordenador = new CopyOnWriteArrayList<>();
     private OuvinteMulticast ouvinteLideres;
 
+    // NOVOS COMPONENTES - Comunicação Intergrupos e SuperCoordenador
+    private final ComunicacaoIntergrupos comunicacaoIntergrupos;
+    private final SuperCoordenador superCoordenador;
+
     // Sistemas integrados
     private final GestorSnapshot gestorSnapshot;
     private final GestorRecuperacao gestorRecuperacao;
@@ -62,6 +68,24 @@ public class NoGrupoA {
         for (int pid : todosPidsDoGrupo) {
             nosDaRede.put(pid, new InfoNo(pid, portasHeartbeat.get(pid)));
         }
+
+        // NOVO: Inicializar comunicação intergrupos
+        this.comunicacaoIntergrupos = new ComunicacaoIntergrupos(
+                id, "A",
+                () -> this.relogioLamport.get(),
+                () -> this.id == this.coordenadorId,
+                this::processarMensagemIntergrupos,
+                () -> new Recurso(this.id, this.relogioLamport.get())
+        );
+
+        // NOVO: Inicializar supercoordenador
+        this.superCoordenador = new SuperCoordenador(
+                id, "A",
+                () -> this.relogioLamport.get(),
+                () -> this.id == this.coordenadorId,
+                this::notificarEvento,
+                this.comunicacaoIntergrupos
+        );
 
         // Inicializar gestores
         this.gestorSnapshot = new GestorSnapshot(
@@ -87,6 +111,96 @@ public class NoGrupoA {
         iniciarServicosHeartbeat();
         iniciarTarefaCoordenador();
         iniciarMonitoramentoPeriodico();
+
+        // NOVO: Iniciar descoberta de outros grupos
+        iniciarDescobertaIntergrupos();
+    }
+
+    /**
+     * NOVO: Inicia descoberta e comunicação com outros grupos
+     */
+    private void iniciarDescobertaIntergrupos() {
+        // Enviar ping inicial para descobrir outros grupos após 5 segundos
+        scheduler.schedule(() -> {
+            comunicacaoIntergrupos.enviarPingIntergrupo();
+            System.out.printf("[INTERGRUPOS P%d-A] Descoberta de grupos iniciada%n", id);
+        }, 5, TimeUnit.SECONDS);
+
+        // Ping periódico para manter comunicação viva
+        scheduler.scheduleAtFixedRate(() -> {
+            if (id == coordenadorId) { // Apenas o líder faz ping
+                comunicacaoIntergrupos.enviarPingIntergrupo();
+            }
+        }, 30, 60, TimeUnit.SECONDS); // A cada 1 minuto após 30s iniciais
+    }
+
+    /**
+     * NOVO: Processa mensagens recebidas via comunicação intergrupos
+     */
+    private void processarMensagemIntergrupos(String mensagem) {
+        // Atualizar relógio de Lamport
+        relogioLamport.incrementAndGet();
+
+        if (mensagem.startsWith("SNAPSHOT_MARKER:")) {
+            // Mensagem de snapshot de outro grupo
+            String payload = mensagem.substring(16);
+            System.out.printf("[SNAPSHOT P%d-A] Marcador de snapshot intergrupos recebido: %s%n",
+                    id, payload);
+
+            if (gestorSnapshot != null) {
+                // Processar marcador de snapshot cross-group
+                gestorSnapshot.receberMarcador(-1, relogioLamport.get(), payload);
+            }
+        } else if (mensagem.startsWith("SUPER_ELECTION:")) {
+            // Mensagem de eleição de supercoordenador
+            String payload = mensagem.substring(15);
+            System.out.printf("[ELEIÇÃO SUPER P%d-A] Candidatura intergrupos: %s%n", id, payload);
+
+            // Extrair informações do candidato
+            if (payload.contains("candidato:") && payload.contains("prioridade:")) {
+                try {
+                    String[] partes = payload.split(",");
+                    for (String parte : partes) {
+                        if (parte.startsWith("candidato:")) {
+                            String candidatoInfo = parte.substring(10);
+                            // Processar candidatura na eleição global
+                            processarCandidaturaGlobal(candidatoInfo);
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.printf("[ERRO P%d-A] Erro ao processar candidatura: %s%n", id, e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * NOVO: Processa candidaturas para supercoordenador global
+     */
+    private void processarCandidaturaGlobal(String candidatoInfo) {
+        // candidatoInfo formato: "idNo-tipoGrupo"
+        String[] partes = candidatoInfo.split("-");
+        if (partes.length != 2) return;
+
+        try {
+            int idCandidato = Integer.parseInt(partes[0]);
+            String grupoCandidato = partes[1];
+
+            System.out.printf("[ELEIÇÃO SUPER P%d-A] Candidato: P%d-%s%n", id, idCandidato, grupoCandidato);
+
+            // Se eu sou líder do meu grupo, também sou candidato
+            if (id == coordenadorId) {
+                candidatosSuperCoordenador.add(id); // Minha candidatura
+            }
+
+            // Adicionar candidato externo se não estiver na lista
+            if (!candidatosSuperCoordenador.contains(idCandidato)) {
+                candidatosSuperCoordenador.add(idCandidato);
+            }
+
+        } catch (NumberFormatException e) {
+            System.err.printf("[ERRO P%d-A] ID de candidato inválido: %s%n", id, candidatoInfo);
+        }
     }
 
     private void iniciarServicosHeartbeat() {
@@ -123,6 +237,9 @@ public class NoGrupoA {
                             servidorAuthThread.start();
                         }
                         coletarEstadoGlobal();
+
+                        // NOVO: Solicitar status de outros grupos
+                        comunicacaoIntergrupos.solicitarStatusIntergrupo();
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -143,12 +260,22 @@ public class NoGrupoA {
             }
         }, 120, 120, TimeUnit.SECONDS);
 
-        // Snapshot periódico a cada 5 minutos (se for supercoordenador)
+        // MODIFICADO: Snapshot periódico apenas se for supercoordenador
         scheduler.scheduleAtFixedRate(() -> {
-            if (id == superCoordenadorId && ativo.get()) {
+            if (superCoordenador.isSupercoordenador() && ativo.get()) {
+                System.out.printf("[SNAPSHOT P%d-A] Iniciando snapshot como supercoordenador%n", id);
                 gestorSnapshot.iniciarCapturaEstado();
             }
         }, 300, 300, TimeUnit.SECONDS);
+
+        // NOVO: Relatório de comunicação intergrupos a cada 3 minutos
+        scheduler.scheduleAtFixedRate(() -> {
+            if (id == coordenadorId && ativo.get()) {
+                String relatorio = comunicacaoIntergrupos.gerarRelatorioIntergrupos();
+                System.out.print(relatorio);
+                emissor.enviarMensagem(relatorio, "239.0.0.1", 12345);
+            }
+        }, 180, 180, TimeUnit.SECONDS);
     }
 
     public void iniciarEleicao() {
@@ -209,6 +336,7 @@ public class NoGrupoA {
             }
         }
 
+        // MODIFICADO: Iniciar eleição de supercoordenador com comunicação intergrupos
         iniciarEleicaoSuperCoordenador();
     }
 
@@ -242,6 +370,9 @@ public class NoGrupoA {
         }
     }
 
+    /**
+     * MODIFICADO: Eleição de supercoordenador com comunicação intergrupos
+     */
     private void iniciarEleicaoSuperCoordenador() {
         System.out.printf("[SUPER-ELEIÇÃO P%d] Tornei-me líder do Grupo A. Iniciando eleição para supercoordenador...%n", id);
         candidatosSuperCoordenador.clear();
@@ -250,11 +381,14 @@ public class NoGrupoA {
         this.ouvinteLideres = new OuvinteMulticast(PORTA_LIDERES, ENDERECO_LIDERES, this::processarMensagemLideres);
         new Thread(this.ouvinteLideres).start();
 
+        // NOVO: Enviar candidatura via comunicação intergrupos também
+        comunicacaoIntergrupos.enviarCandidaturaSuper();
         emissor.enviarMensagem("CANDIDATO:" + this.id, ENDERECO_LIDERES, PORTA_LIDERES);
 
         new Thread(() -> {
             try {
-                Thread.sleep(8000);
+                Thread.sleep(10000); // Aumentado para 10 segundos para aguardar outros grupos
+
                 int vencedor = candidatosSuperCoordenador.stream()
                         .max(Integer::compareTo)
                         .orElse(this.id);
@@ -265,9 +399,15 @@ public class NoGrupoA {
 
                 notificarEvento("SUPERCOORDENADOR ELEITO: P" + superCoordenadorId);
 
+                // NOVO: Se eu sou o supercoordenador, ativar responsabilidades
                 if (id == superCoordenadorId) {
-                    gestorSnapshot.iniciarCapturaEstado();
+                    System.out.printf("[SUPER-COORD P%d-A] *** TORNEI-ME SUPERCOORDENADOR GLOBAL! ***%n", id);
+                    superCoordenador.ativarComoSupercoordenador();
+                } else {
+                    System.out.printf("[SUPER-COORD P%d-A] Supercoordenador é P%d, continuando como líder local%n",
+                            id, superCoordenadorId);
                 }
+
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -295,6 +435,7 @@ public class NoGrupoA {
             case "CANDIDATO":
                 if (!candidatosSuperCoordenador.contains(remetenteId)) {
                     candidatosSuperCoordenador.add(remetenteId);
+                    System.out.printf("[ELEIÇÃO SUPER P%d-A] Novo candidato: P%d%n", id, remetenteId);
                 }
                 break;
 
@@ -368,13 +509,31 @@ public class NoGrupoA {
         emissor.enviarNotificacao(evento, this.id);
     }
 
+    /**
+     * MODIFICADO: Para todos os serviços incluindo comunicação intergrupos
+     */
     public void setAtivo(boolean status) {
         this.ativo.set(status);
         if (!status) {
+            System.out.printf("[GRUPO A P%d] Parando todos os serviços...%n", id);
+
             servidorGrpc.shutdown();
             scheduler.shutdown();
+
+            // NOVO: Parar comunicação intergrupos
+            if (comunicacaoIntergrupos != null) {
+                comunicacaoIntergrupos.parar();
+            }
+
+            // NOVO: Desativar supercoordenador se ativo
+            if (superCoordenador != null && superCoordenador.isSupercoordenador()) {
+                superCoordenador.desativar();
+            }
+
             pararServicosSocket();
             if (ouvinteLideres != null) ouvinteLideres.parar();
+
+            System.out.printf("[GRUPO A P%d] Todos os serviços foram encerrados%n", id);
         }
     }
 
@@ -400,6 +559,11 @@ public class NoGrupoA {
     public int getCoordenadorId() { return coordenadorId; }
     public Map<Integer, InfoNo> getNosDaRede() { return nosDaRede; }
     public GestorSnapshot getGestorSnapshot() { return gestorSnapshot; }
+
+    // NOVOS Getters
+    public ComunicacaoIntergrupos getComunicacaoIntergrupos() { return comunicacaoIntergrupos; }
+    public SuperCoordenador getSuperCoordenador() { return superCoordenador; }
+    public boolean isSupercoordenador() { return superCoordenador.isSupercoordenador(); }
 
     private class ServicoGrupoAImpl extends ServicoGrupoAGrpc.ServicoGrupoAImplBase {
         private final NoGrupoA noPai;
