@@ -3,6 +3,10 @@ package monitoramento.coordenacao;
 
 import monitoramento.comum.Recurso;
 import monitoramento.intergrupo.ComunicacaoIntergrupos;
+
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -279,6 +283,15 @@ public class SuperCoordenador {
                 estado.setUltimaAtualizacao(info.getUltimoContato());
                 estado.setLiderAtual(info.getId());
             }
+        }
+    }
+
+    private void salvarRelatorio(String relatorio, String nomeArquivo) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(nomeArquivo, true))) {
+            writer.write(relatorio);
+            writer.newLine();
+        } catch (IOException e) {
+            System.err.printf("[ERRO SUPER-COORD P%d-%s] Falha ao salvar relatório: %s%n", idNo, tipoGrupo, e.getMessage());
         }
     }
 

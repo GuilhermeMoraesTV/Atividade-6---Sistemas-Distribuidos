@@ -13,7 +13,7 @@ public class GestorHeartbeat implements Runnable {
     private final Supplier<Integer> coordenadorIdSupplier;
     private final Supplier<Map<Integer, InfoNo>> nosDaRedeSupplier;
     private final Runnable iniciarEleicaoCallback; // CORRIGIDO: O tipo agora é Runnable (uma função sem parâmetros)
-    private static final int TIMEOUT_MS = 2000;
+    private static final int TIMEOUT_MS = 3000;
 
     public GestorHeartbeat(Supplier<Integer> idSupplier, Supplier<Integer> coordenadorIdSupplier, Supplier<Map<Integer, InfoNo>> nosDaRedeSupplier, Runnable iniciarEleicaoCallback) {
         this.idSupplier = idSupplier;

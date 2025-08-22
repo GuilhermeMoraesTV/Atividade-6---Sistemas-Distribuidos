@@ -1,5 +1,6 @@
 package monitoramento;
 
+import monitoramento.comum.ConfiguradorSistema;
 import monitoramento.grupoa.NoGrupoA;
 import monitoramento.grupob.NoGrupoB;
 import monitoramento.coordenacao.OuvinteMulticast;
@@ -22,6 +23,8 @@ public class Simulador {
     private static volatile boolean simulacaoAtiva = true;
 
     public static void main(String[] args) {
+        ConfiguradorSistema.inicializar();
+
         List<Integer> pidsGrupoA = Arrays.asList(1, 2, 3);
         List<Integer> pidsGrupoB = Arrays.asList(4, 5, 6);
         Map<Integer, Integer> portasHeartbeat = new HashMap<>();
@@ -109,7 +112,7 @@ public class Simulador {
 
                 // Aguardar nova eleição
                 System.out.println("[SIMULADOR] Aguardando nova eleição no Grupo A...");
-                Thread.sleep(15000);
+                Thread.sleep(20000);
                 verificarNovoLiderGrupoA(nosGrupoA);
             }
 
@@ -135,7 +138,7 @@ public class Simulador {
 
                 // Aguardar nova eleição
                 System.out.println("[SIMULADOR] Aguardando nova eleição no Grupo B...");
-                Thread.sleep(15000);
+                Thread.sleep(20000);
                 verificarNovoLiderGrupoB(nosGrupoB);
             }
 

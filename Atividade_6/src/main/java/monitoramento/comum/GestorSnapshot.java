@@ -27,7 +27,7 @@ public class GestorSnapshot {
 
     // Configurações
     private static final String ENDERECO_SNAPSHOT = "239.0.0.3";
-    private static final int PORTA_SNAPSHOT = 12347;
+    private static final int PORTA_SNAPSHOT = 12345;
 
     public GestorSnapshot(Supplier<Integer> idSupplier, Supplier<Integer> relogioSupplier,
                           Supplier<Boolean> isAtivoSupplier) {
@@ -200,7 +200,7 @@ public class GestorSnapshot {
      */
     private void finalizarSnapshotAposTimeout() {
         try {
-            Thread.sleep(15000); // 15 segundos de timeout
+            Thread.sleep(20000);
             if (capturaAtiva.get()) {
                 System.out.printf("[SNAPSHOT P%d] Timeout atingido, finalizando snapshot%n", idSupplier.get());
                 finalizarSnapshot();

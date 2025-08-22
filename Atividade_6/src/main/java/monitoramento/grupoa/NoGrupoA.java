@@ -554,7 +554,9 @@ public class NoGrupoA {
     }
 
     public void registrarClienteAutenticado() {
-        this.clienteAutenticadoPresente.set(true);
+        boolean anterior = this.clienteAutenticadoPresente.getAndSet(true);
+        System.out.printf("[DEBUG] P%d cliente registrado. Estado anterior: %s, novo: %s%n",
+                id, anterior, clienteAutenticadoPresente.get());
         notificarEvento("CLIENTE AUTENTICADO COM SUCESSO");
     }
 

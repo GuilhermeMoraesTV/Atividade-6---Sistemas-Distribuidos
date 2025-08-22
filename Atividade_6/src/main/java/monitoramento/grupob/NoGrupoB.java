@@ -450,7 +450,10 @@ public class NoGrupoB {
     private void coletarEstadoGlobal() {
         relogioLamport.incrementAndGet();
         List<Recurso> snapshot = new ArrayList<>();
-        snapshot.add(this.obterStatusLocal());
+        snapshot.add(new Recurso(this.id, this.relogioLamport.get()));
+
+        System.out.printf("[DEBUG] P%d coletando estado global. Cliente autenticado: %s%n",
+                id, clienteAutenticadoPresente.get());
 
         for (int pid : todosPidsDoGrupo) {
             if (pid != this.id && nosDaRede.get(pid).isAtivo()) {
@@ -458,9 +461,13 @@ public class NoGrupoB {
             }
         }
 
-        if (clienteAutenticadoPresente.get()) {
-            emissor.enviarRelatorio(this.id, snapshot);
-        }
+        System.out.printf("[DEBUG] P%d snapshot coletado: %d recursos%n", id, snapshot.size());
+
+        // SEMPRE enviar relatório, independente do cliente estar autenticado
+        // para debug, depois pode voltar à verificação original
+        emissor.enviarRelatorio(this.id, snapshot);
+        System.out.printf("[DEBUG] P%d relatório enviado via multicast%n", id);
+
     }
 
     /**
@@ -539,9 +546,10 @@ public class NoGrupoB {
         }
     }
 
-    // NOVO: Método público para registrar cliente autenticado
     public void registrarClienteAutenticado() {
-        this.clienteAutenticadoPresente.set(true);
+        boolean anterior = this.clienteAutenticadoPresente.getAndSet(true);
+        System.out.printf("[DEBUG] P%d cliente registrado. Estado anterior: %s, novo: %s%n",
+                id, anterior, clienteAutenticadoPresente.get());
         notificarEvento("CLIENTE AUTENTICADO COM SUCESSO");
     }
 

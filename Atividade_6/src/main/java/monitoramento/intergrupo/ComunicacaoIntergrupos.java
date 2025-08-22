@@ -39,7 +39,7 @@ public class ComunicacaoIntergrupos {
     private static final String ENDERECO_INTERGRUPOS = "239.0.0.4";
     private static final int PORTA_INTERGRUPOS = 12348;
     private static final long TIMEOUT_DESCOBERTA_MS = 30000; // 30 segundos
-    private static final long INTERVALO_HEARTBEAT_MS = 15000; // 15 segundos
+    private static final long INTERVALO_HEARTBEAT_MS = 20000; // 15 segundos
 
     public ComunicacaoIntergrupos(int idNo, String tipoGrupo,
                                   Supplier<Integer> relogioSupplier,
