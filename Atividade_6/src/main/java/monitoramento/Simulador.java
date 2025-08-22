@@ -88,7 +88,7 @@ public class Simulador {
 
             // Aguardar inicialização completa
             System.out.println("\n[SIMULADOR] Aguardando 30s para inicialização completa...");
-            Thread.sleep(30000); // Aumentar para 30 segundos
+            Thread.sleep(35000); // Aumentar para 35 segundos
 
             verificarStatusSistema(nosGrupoA, nosGrupoB);
             iniciarMonitoramentoSistema(nosGrupoA, nosGrupoB);
@@ -102,7 +102,7 @@ public class Simulador {
             System.out.println("  CENÁRIO 1: FALHA DO LÍDER DO GRUPO A (P3)");
             System.out.println("=".repeat(60));
             System.out.println("[SIMULADOR] Aguardando 25s antes de simular falha...");
-            Thread.sleep(25000);
+            Thread.sleep(35000);
 
             // Simular falha do líder do Grupo A
             NoGrupoA liderGrupoA = encontrarLiderGrupoA(nosGrupoA);
@@ -112,7 +112,7 @@ public class Simulador {
 
                 // Aguardar nova eleição
                 System.out.println("[SIMULADOR] Aguardando nova eleição no Grupo A...");
-                Thread.sleep(20000);
+                Thread.sleep(35000);
                 verificarNovoLiderGrupoA(nosGrupoA);
             }
 
@@ -121,7 +121,7 @@ public class Simulador {
             System.out.println("  CENÁRIO 2: FALHA DO LÍDER DO GRUPO B (P6)");
             System.out.println("=".repeat(60));
             System.out.println("[SIMULADOR] Aguardando 25s antes de simular falha...");
-            Thread.sleep(25000);
+            Thread.sleep(35000);
 
             // Simular falha do líder do Grupo B
             NoGrupoB liderGrupoB = encontrarLiderGrupoB(nosGrupoB);
@@ -138,7 +138,7 @@ public class Simulador {
 
                 // Aguardar nova eleição
                 System.out.println("[SIMULADOR] Aguardando nova eleição no Grupo B...");
-                Thread.sleep(20000);
+                Thread.sleep(35000);
                 verificarNovoLiderGrupoB(nosGrupoB);
             }
 
@@ -241,7 +241,7 @@ public class Simulador {
             }
 
             if (supercoordenadores.size() > 1) {
-                System.out.printf("   ⚠️  CONFLITO: Múltiplos supercoordenadores: %s%n", supercoordenadores);
+                System.out.printf(" ️  CONFLITO: Múltiplos supercoordenadores: %s%n", supercoordenadores);
                 resolverConflitoSupercoordenador(nosGrupoA, nosGrupoB);
             } else if (supercoordenadores.size() == 1) {
                 System.out.printf("   Supercoordenador: %s%n", supercoordenadores.get(0));
@@ -253,7 +253,7 @@ public class Simulador {
     }
 
     private static void resolverConflitoSupercoordenador(List<NoGrupoA> nosGrupoA, List<NoGrupoB> nosGrupoB) {
-        System.out.println("🔄 [SIMULADOR] Resolvendo conflito de supercoordenador...");
+        System.out.println(" [SIMULADOR] Resolvendo conflito de supercoordenador...");
 
         // Desativar todos os supercoordenadores exceto o de maior ID
         int maiorId = -1;
@@ -278,11 +278,11 @@ public class Simulador {
             }
         }
 
-        System.out.printf("✅ [SIMULADOR] Conflito resolvido. Supercoordenador único: P%d%n", maiorId);
+        System.out.printf(" [SIMULADOR] Conflito resolvido. Supercoordenador único: P%d%n", maiorId);
     }
 
     private static void verificarStatusSistema(List<NoGrupoA> nosGrupoA, List<NoGrupoB> nosGrupoB) {
-        System.out.println("\n📋 [SIMULADOR] Verificação de Status Inicial:");
+        System.out.println("\n [SIMULADOR] Verificação de Status Inicial:");
 
         System.out.println("   Grupo A (gRPC):");
         for (NoGrupoA no : nosGrupoA) {
@@ -320,18 +320,18 @@ public class Simulador {
     private static void verificarNovoLiderGrupoA(List<NoGrupoA> nosGrupoA) {
         NoGrupoA novoLider = encontrarLiderGrupoA(nosGrupoA);
         if (novoLider != null) {
-            System.out.printf("✅ [SIMULADOR] Novo líder do Grupo A: P%d%n", novoLider.getId());
+            System.out.printf(" [SIMULADOR] Novo líder do Grupo A: P%d%n", novoLider.getId());
         } else {
-            System.out.println("❌ [SIMULADOR] Nenhum líder ativo encontrado no Grupo A");
+            System.out.println(" [SIMULADOR] Nenhum líder ativo encontrado no Grupo A");
         }
     }
 
     private static void verificarNovoLiderGrupoB(List<NoGrupoB> nosGrupoB) {
         NoGrupoB novoLider = encontrarLiderGrupoB(nosGrupoB);
         if (novoLider != null) {
-            System.out.printf("✅ [SIMULADOR] Novo líder do Grupo B: P%d%n", novoLider.getId());
+            System.out.printf(" [SIMULADOR] Novo líder do Grupo B: P%d%n", novoLider.getId());
         } else {
-            System.out.println("❌ [SIMULADOR] Nenhum líder ativo encontrado no Grupo B");
+            System.out.println(" [SIMULADOR] Nenhum líder ativo encontrado no Grupo B");
         }
     }
 
@@ -452,7 +452,7 @@ public class Simulador {
 
     // Metodo de debug detalhado:
     private static void debugStatusCompleto(List<NoGrupoA> nosGrupoA, List<NoGrupoB> nosGrupoB) {
-        System.out.println("\n🔍 [DEBUG] Status Detalhado do Sistema:");
+        System.out.println("\n [DEBUG] Status Detalhado do Sistema:");
         System.out.println("─".repeat(80));
 
         // Debug Grupo A
@@ -460,10 +460,10 @@ public class Simulador {
         for (NoGrupoA no : nosGrupoA) {
             System.out.printf("  P%d: %s | Líder: %s | Super: %s | Heartbeat: %s%n",
                     no.getId(),
-                    no.isAtivo() ? "🟢 ATIVO" : "🔴 INATIVO",
-                    no.getId() == no.getCoordenadorId() ? "👑 SIM" : "   não",
-                    no.isSupercoordenador() ? "🌐 SIM" : "   não",
-                    verificarHeartbeatAtivo(no.getId()) ? "💓 OK" : "💔 FALHA");
+                    no.isAtivo() ? " ATIVO" : " INATIVO",
+                    no.getId() == no.getCoordenadorId() ? " SIM" : "   não",
+                    no.isSupercoordenador() ? " SIM" : "   não",
+                    verificarHeartbeatAtivo(no.getId()) ? " OK" : " FALHA");
 
             if (no.isAtivo()) {
                 int gruposConhecidos = no.getComunicacaoIntergrupos().getGruposConhecidos().size();
@@ -478,10 +478,10 @@ public class Simulador {
         for (NoGrupoB no : nosGrupoB) {
             System.out.printf("  P%d: %s | Líder: %s | Super: %s | Heartbeat: %s%n",
                     no.getId(),
-                    no.isAtivo() ? "🟢 ATIVO" : "🔴 INATIVO",
-                    no.getId() == no.getCoordenadorId() ? "👑 SIM" : "   não",
-                    no.isSupercoordenador() ? "🌐 SIM" : "   não",
-                    verificarHeartbeatAtivo(no.getId()) ? "💓 OK" : "💔 FALHA");
+                    no.isAtivo() ? " ATIVO" : " INATIVO",
+                    no.getId() == no.getCoordenadorId() ? " SIM" : "   não",
+                    no.isSupercoordenador() ? " SIM" : "   não",
+                    verificarHeartbeatAtivo(no.getId()) ? " OK" : " FALHA");
 
             if (no.isAtivo()) {
                 int gruposConhecidos = no.getComunicacaoIntergrupos().getGruposConhecidos().size();
