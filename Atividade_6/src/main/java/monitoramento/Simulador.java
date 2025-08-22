@@ -209,7 +209,7 @@ public class Simulador {
         scheduler.scheduleAtFixedRate(() -> {
             if (!simulacaoAtiva) return;
 
-            System.out.println("\n📊 [MONITOR] Status do Sistema:");
+            System.out.println("\n [MONITOR] Status do Sistema:");
 
             // Monitorar Grupo A
             long ativosA = nosGrupoA.stream().filter(NoGrupoA::isAtivo).count();
@@ -337,7 +337,7 @@ public class Simulador {
 
     private static void verificarSupercoordenador(List<NoGrupoA> nosGrupoA, List<NoGrupoB> nosGrupoB) {
         String supercoordenador = identificarSupercoordenador(nosGrupoA, nosGrupoB);
-        System.out.printf("🌐 [SIMULADOR] Supercoordenador Global: %s%n", supercoordenador);
+        System.out.printf(" [SIMULADOR] Supercoordenador Global: %s%n", supercoordenador);
     }
 
     private static String identificarSupercoordenador(List<NoGrupoA> nosGrupoA, List<NoGrupoB> nosGrupoB) {
@@ -439,14 +439,14 @@ public class Simulador {
         }
 
         System.out.println("=".repeat(80));
-        System.out.println("STATUS FINAL: SIMULAÇÃO CONCLUÍDA COM SUCESSO ✅");
+        System.out.println("STATUS FINAL: SIMULAÇÃO CONCLUÍDA COM SUCESSO ");
         System.out.println("Todos os algoritmos e componentes foram testados:");
-        System.out.println("• Eleição Bully (Grupo A) ✅");
-        System.out.println("• Eleição em Anel (Grupo B) ✅");
-        System.out.println("• Comunicação Intergrupos ✅");
-        System.out.println("• Supercoordenação Global ✅");
-        System.out.println("• Snapshots Distribuídos ✅");
-        System.out.println("• Recuperação de Falhas ✅");
+        System.out.println("• Eleição Bully (Grupo A) ");
+        System.out.println("• Eleição em Anel (Grupo B) ");
+        System.out.println("• Comunicação Intergrupos ");
+        System.out.println("• Supercoordenação Global ");
+        System.out.println("• Snapshots Distribuídos ");
+        System.out.println("• Recuperação de Falhas ");
         System.out.println("=".repeat(80));
     }
 

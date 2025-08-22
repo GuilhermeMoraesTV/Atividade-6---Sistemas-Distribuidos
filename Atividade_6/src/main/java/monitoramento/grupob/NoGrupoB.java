@@ -67,7 +67,7 @@ public class NoGrupoB {
         int meuIndice = pidsOrdenados.indexOf(id);
         this.idProximoNo = pidsOrdenados.get((meuIndice + 1) % pidsOrdenados.size());
 
-        // NOVO: Inicializar comunicação intergrupos
+        // Inicializar comunicação intergrupos
         this.comunicacaoIntergrupos = new ComunicacaoIntergrupos(
                 id, "B",
                 () -> this.relogioLamport.get(),
@@ -76,7 +76,7 @@ public class NoGrupoB {
                 () -> new Recurso(this.id, this.relogioLamport.get())
         );
 
-        // NOVO: Inicializar supercoordenador
+        //  Inicializar supercoordenador
         this.superCoordenador = new SuperCoordenador(
                 id, "B",
                 () -> this.relogioLamport.get(),
@@ -107,12 +107,12 @@ public class NoGrupoB {
         iniciarTarefaCoordenador();
         iniciarMonitoramentoPeriodico();
 
-        // NOVO: Iniciar descoberta de outros grupos
+        // Iniciar descoberta de outros grupos
         iniciarDescobertaIntergrupos();
     }
 
     /**
-     * NOVO: Inicia descoberta e comunicação com outros grupos
+     Inicia descoberta e comunicação com outros grupos
      */
     private void iniciarDescobertaIntergrupos() {
         // Enviar ping inicial para descobrir outros grupos após 5 segundos
@@ -130,7 +130,7 @@ public class NoGrupoB {
     }
 
     /**
-     * NOVO: Processa mensagens recebidas via comunicação intergrupos
+      Processa mensagens recebidas via comunicação intergrupos
      */
     private void processarMensagemIntergrupos(String mensagem) {
         // Atualizar relógio de Lamport
@@ -170,7 +170,7 @@ public class NoGrupoB {
     }
 
     /**
-     * NOVO: Processa candidaturas para supercoordenador global
+     *  Processa candidaturas para supercoordenador global
      */
     private void processarCandidaturaGlobal(String candidatoInfo) {
         // candidatoInfo formato: "idNo-tipoGrupo"
@@ -240,7 +240,7 @@ public class NoGrupoB {
                         }
                         coletarEstadoGlobal();
 
-                        // NOVO: Solicitar status de outros grupos
+                        //  Solicitar status de outros grupos
                         comunicacaoIntergrupos.solicitarStatusIntergrupo();
                     }
                 } catch (InterruptedException e) {
@@ -252,7 +252,7 @@ public class NoGrupoB {
     }
 
     /**
-     * NOVO: Inicia monitoramento periódico e relatórios do sistema
+      Inicia monitoramento periódico e relatórios do sistema
      */
     private void iniciarMonitoramentoPeriodico() {
         // Relatório de recuperação a cada 2 minutos
@@ -262,7 +262,7 @@ public class NoGrupoB {
             }
         }, 120, 120, TimeUnit.SECONDS);
 
-        // MODIFICADO: Snapshot periódico apenas se for supercoordenador
+        // Snapshot periódico apenas se for supercoordenador
         scheduler.scheduleAtFixedRate(() -> {
             if (superCoordenador.isSupercoordenador() && ativo.get()) {
                 System.out.printf("[SNAPSHOT P%d-B] Iniciando snapshot como supercoordenador%n", id);
@@ -270,7 +270,7 @@ public class NoGrupoB {
             }
         }, 300, 300, TimeUnit.SECONDS);
 
-        // NOVO: Relatório de comunicação intergrupos a cada 3 minutos
+        // Relatório de comunicação intergrupos a cada 3 minutos
         scheduler.scheduleAtFixedRate(() -> {
             if (id == coordenadorId && ativo.get()) {
                 String relatorio = comunicacaoIntergrupos.gerarRelatorioIntergrupos();
@@ -365,7 +365,7 @@ public class NoGrupoB {
     }
 
     /**
-     * MODIFICADO: Eleição de supercoordenador com comunicação intergrupos
+     Eleição de supercoordenador com comunicação intergrupos
      */
     private void iniciarEleicaoSuperCoordenador() {
         System.out.printf("[SUPER-ELEIÇÃO P%d] Tornei-me líder do Grupo B. Iniciando eleição para supercoordenador...%n", id);
@@ -375,7 +375,7 @@ public class NoGrupoB {
         this.ouvinteLideres = new OuvinteMulticast(PORTA_LIDERES, ENDERECO_LIDERES, this::processarMensagemLideres);
         new Thread(this.ouvinteLideres).start();
 
-        // NOVO: Enviar candidatura via comunicação intergrupos também
+        //  Enviar candidatura via comunicação intergrupos também
         comunicacaoIntergrupos.enviarCandidaturaSuper();
         emissor.enviarMensagem("CANDIDATO:" + this.id, ENDERECO_LIDERES, PORTA_LIDERES);
 
@@ -393,7 +393,7 @@ public class NoGrupoB {
 
                 notificarEvento("SUPERCOORDENADOR ELEITO: P" + superCoordenadorId);
 
-                // NOVO: Se eu sou o supercoordenador, ativar responsabilidades
+                //  Se eu sou o supercoordenador, ativar responsabilidades
                 if (id == superCoordenadorId) {
                     System.out.printf("[SUPER-COORD P%d-B] *** TORNEI-ME SUPERCOORDENADOR GLOBAL! ***%n", id);
                     superCoordenador.ativarComoSupercoordenador();
@@ -471,7 +471,7 @@ public class NoGrupoB {
     }
 
     /**
-     * NOVO: Coleta status de um nó específico com tratamento de falhas
+     *  Coleta status de um nó específico com tratamento de falhas
      */
     private void coletarStatusNo(int pid, List<Recurso> snapshot) {
         try {
@@ -498,14 +498,14 @@ public class NoGrupoB {
     }
 
     /**
-     * NOVO: Notifica eventos importantes
+      Notifica eventos importantes
      */
     private void notificarEvento(String evento) {
         emissor.enviarNotificacao(evento, this.id);
     }
 
     /**
-     * MODIFICADO: Para todos os serviços incluindo comunicação intergrupos
+     Para todos os serviços incluindo comunicação intergrupos
      */
     public void setAtivo(boolean status) {
         this.ativo.set(status);
@@ -514,12 +514,12 @@ public class NoGrupoB {
 
             scheduler.shutdown();
 
-            // NOVO: Parar comunicação intergrupos
+            //  Parar comunicação intergrupos
             if (comunicacaoIntergrupos != null) {
                 comunicacaoIntergrupos.parar();
             }
 
-            // NOVO: Desativar supercoordenador se ativo
+            //  Desativar supercoordenador se ativo
             if (superCoordenador != null && superCoordenador.isSupercoordenador()) {
                 superCoordenador.desativar();
             }
@@ -560,7 +560,7 @@ public class NoGrupoB {
     public ServicoNoRMI getServidorRMI() { return servidorRMI; }
     public int getCoordenadorId() { return coordenadorId; }
 
-    // NOVOS Getters
+    //  Getters
     public ComunicacaoIntergrupos getComunicacaoIntergrupos() { return comunicacaoIntergrupos; }
     public SuperCoordenador getSuperCoordenador() { return superCoordenador; }
     public boolean isSupercoordenador() { return superCoordenador.isSupercoordenador(); }

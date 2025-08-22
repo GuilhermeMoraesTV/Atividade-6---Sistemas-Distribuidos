@@ -17,7 +17,7 @@ public class ConfiguradorSistema {
             // Configurações de timeout
             System.setProperty("sun.net.useExclusiveBind", "false");
 
-            System.out.println("[CONFIG] ✅ Propriedades de sistema configuradas para multicast");
+            System.out.println("[CONFIG]  Propriedades de sistema configuradas para multicast");
 
         } catch (Exception e) {
             System.err.printf("[CONFIG] Erro ao configurar propriedades: %s%n", e.getMessage());
@@ -28,7 +28,7 @@ public class ConfiguradorSistema {
      * Diagnóstico de rede para multicast
      */
     public static void diagnosticarRede() {
-        System.out.println("\n[DIAGNÓSTICO] 🔍 Verificando configuração de rede...");
+        System.out.println("\n[DIAGNÓSTICO]  Verificando configuração de rede...");
 
         try {
             System.out.printf("[DIAGNÓSTICO] OS: %s %s%n",
@@ -43,11 +43,11 @@ public class ConfiguradorSistema {
 
                 if (ni.supportsMulticast() && ni.isUp()) {
                     count++;
-                    System.out.printf("[DIAGNÓSTICO] ✅ Interface multicast: %s (%s)%n",
+                    System.out.printf("[DIAGNÓSTICO]  Interface multicast: %s (%s)%n",
                             ni.getName(), ni.getDisplayName());
 
                     if (ni.isLoopback()) {
-                        System.out.printf("  └─ 🔄 LOOPBACK (ideal para testes locais)%n");
+                        System.out.printf("  └─  LOOPBACK (ideal para testes locais)%n");
                     }
 
                     // Mostrar IPs
@@ -58,29 +58,29 @@ public class ConfiguradorSistema {
             }
 
             if (count == 0) {
-                System.err.println("[DIAGNÓSTICO] ❌ ERRO: Nenhuma interface multicast disponível!");
+                System.err.println("[DIAGNÓSTICO]  ERRO: Nenhuma interface multicast disponível!");
             } else {
-                System.out.printf("[DIAGNÓSTICO] ✅ %d interface(s) multicast disponível(eis)%n", count);
+                System.out.printf("[DIAGNÓSTICO]  %d interface(s) multicast disponível(eis)%n", count);
             }
 
             // Testar endereços multicast
             try {
                 java.net.InetAddress multicastAddr = java.net.InetAddress.getByName("239.0.0.1");
-                System.out.printf("[DIAGNÓSTICO] ✅ Endereço multicast resolvido: %s%n", multicastAddr);
-                System.out.printf("[DIAGNÓSTICO] ✅ Endereço é válido para multicast: %s%n",
+                System.out.printf("[DIAGNÓSTICO]  Endereço multicast resolvido: %s%n", multicastAddr);
+                System.out.printf("[DIAGNÓSTICO]  Endereço é válido para multicast: %s%n",
                         multicastAddr.isMulticastAddress());
             } catch (Exception e) {
-                System.err.printf("[DIAGNÓSTICO] ❌ Erro ao resolver endereço multicast: %s%n", e.getMessage());
+                System.err.printf("[DIAGNÓSTICO]  Erro ao resolver endereço multicast: %s%n", e.getMessage());
             }
 
             // Testar criação de socket
             try (java.net.DatagramSocket testSocket = new java.net.DatagramSocket()) {
-                System.out.println("[DIAGNÓSTICO] ✅ Pode criar DatagramSocket");
+                System.out.println("[DIAGNÓSTICO]  Pode criar DatagramSocket");
             } catch (Exception e) {
-                System.err.printf("[DIAGNÓSTICO] ❌ Erro ao criar DatagramSocket: %s%n", e.getMessage());
+                System.err.printf("[DIAGNÓSTICO]  Erro ao criar DatagramSocket: %s%n", e.getMessage());
             }
 
-            System.out.println("[DIAGNÓSTICO] ✅ Diagnóstico completo.\n");
+            System.out.println("[DIAGNÓSTICO]  Diagnóstico completo.\n");
 
         } catch (Exception e) {
             System.err.printf("[DIAGNÓSTICO] Erro geral no diagnóstico: %s%n", e.getMessage());

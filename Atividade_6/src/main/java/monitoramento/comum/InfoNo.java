@@ -15,8 +15,7 @@ public class InfoNo {
         this.portaHeartbeat = portaHeartbeat;
     }
 
-    // --- MÉTODOS CORRIGIDOS ---
-
+    // MÉTODOS
     public int getPortaHeartbeat() { // CORRIGIDO: Adicionado "int"
         return portaHeartbeat;
     }
