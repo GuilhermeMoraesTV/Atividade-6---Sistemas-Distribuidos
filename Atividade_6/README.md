@@ -1,130 +1,108 @@
-Sistema Distribuído de Monitoramento com Tolerância a Falhas, Dois Grupos e Supercoordenador
-1. Visão Geral
-Este projeto acadêmico, desenvolvido para a disciplina de Sistemas Distribuídos, simula um avançado sistema de monitoramento de recursos (CPU, memória, etc.) em uma rede de servidores distribuídos em dois grupos distintos:
 
-Grupo A: Utiliza o algoritmo Bully para eleição de líder e se comunica via gRPC.
 
-Grupo B: Utiliza um algoritmo de Anel para eleição de líder e se comunica via Java RMI.
+# Simulação Completa de Ambiente Distribuído com Núcleo Modular, Comunicação Multigrupo e Implementação Híbrida de Middleware
 
-O sistema demonstra conceitos complexos como a coexistência de diferentes arquiteturas de comunicação, eleição de um supercoordenador global, detecção de falhas, snapshots distribuídos (Chandy-Lamport) e recuperação de nós. A simulação (Simulador.java) orquestra a inicialização dos dois grupos, estabiliza o sistema e, em seguida, simula a falha dos líderes de cada grupo para demonstrar a robustez e a capacidade de recuperação autônoma do sistema.
+## 1\. Visão Geral
 
-2. Funcionalidades Principais
-Monitoramento de Recursos: O líder de cada grupo coleta periodicamente o estado de uso de CPU, memória e carga do sistema de todos os nós ativos em seu respectivo grupo.
+Este projeto é uma simulação acadêmica de um sistema distribuído complexo, projetado para demonstrar a coexistência e a interoperabilidade de múltiplos paradigmas e algoritmos. O ambiente é dividido em dois grupos de nós distintos, cada um com sua própria tecnologia de middleware e algoritmo de eleição de líder.
 
-Deteção de Falhas por Heartbeat: Cada nó monitora os outros através de um mecanismo de "PING-PONG" via Sockets TCP, permitindo a detecção rápida de falhas.
+A arquitetura é fundamentada em um **núcleo modular**, onde responsabilidades como detecção de falhas, recuperação e captura de estado são delegadas a componentes especializados. O sistema implementa uma **comunicação multigrupo** que permite aos líderes dos diferentes grupos interagirem para eleger um **supercoordenador** global. Essa interação destaca uma **implementação híbrida de middleware**, onde nós baseados em **gRPC** coexistem e colaboram com nós baseados em **Java RMI**.
 
-Eleição de Líder Multi-Algoritmo:
+A simulação (`Simulador.java`) orquestra todo o ambiente, inicializando os nós, permitindo a estabilização e, em seguida, injetando falhas nos líderes de ambos os grupos para validar os mecanismos de tolerância a falhas e recuperação autônoma.
 
-Grupo A (Bully): Se a falha do coordenador é detectada, o algoritmo Bully elege o nó de maior ID entre os ativos como novo líder.
+## 2\. Arquitetura e Conceitos
 
-Grupo B (Anel): A eleição é realizada passando uma mensagem em anel para determinar o novo líder.
+O sistema é construído sobre quatro pilares principais:
 
-Supercoordenador Global: Após a eleição dos líderes de grupo, um supercoordenador é eleito entre eles para gerenciar tarefas globais, como a captura de snapshots distribuídos.
+### Núcleo Modular
 
-Comunicação Intergrupos: Os líderes de grupo se comunicam via multicast para descobrir outros grupos, trocar informações de status e eleger o supercoordenador.
+Cada nó no sistema é composto por um conjunto de módulos independentes que gerenciam tarefas específicas, promovendo a separação de responsabilidades e a manutenibilidade.
 
-Snapshot Distribuído (Chandy-Lamport): O supercoordenador pode iniciar uma captura de estado global consistente (snapshot) de todo o sistema, envolvendo ambos os grupos.
+  * **`GestorHeartbeat`**: Implementa a detecção de falhas através de um mecanismo "PING-PONG" contínuo via Sockets TCP.
+  * **`GestorRecuperacao`**: Monitora falhas persistentes e aciona o processo de substituição de um nó que não consegue ser recuperado.
+  * **`GeradorNosSubstitutos`**: Simula a criação e inicialização de um novo processo para substituir um nó que falhou permanentemente, garantindo a resiliência do sistema.
+  * **`GestorSnapshot`**: Implementa o algoritmo de Chandy-Lamport para capturar um estado global consistente do sistema, orquestrado pelo supercoordenador.
 
-Comunicação em Grupo (Multicast): Relatórios de estado consolidados são enviados pelos líderes para um grupo multicast UDP, permitindo que múltiplos clientes monitorem o sistema em tempo real.
+### Implementação Híbrida de Middleware
 
-Acesso por Autenticação: Um cliente (ClienteAutenticado.java) deve primeiro se autenticar com o líder do seu grupo para começar a receber os relatórios de monitoramento.
+O ambiente é dividido em dois grupos que utilizam tecnologias de comunicação distintas, demonstrando um cenário heterogêneo.
 
-Cliente Resiliente: A aplicação cliente detecta a ausência de relatórios (indicando uma possível falha de líder) e tenta se re-autenticar automaticamente com o novo líder eleito.
+  * **Grupo A (gRPC & Algoritmo Bully)**: Os nós deste grupo (IDs 1, 2, 3) utilizam gRPC para comunicação interna, definido em `servicos.proto`. A eleição de líder é realizada através do algoritmo Bully.
+  * **Grupo B (Java RMI & Algoritmo de Anel)**: Os nós deste grupo (IDs 4, 5, 6) utilizam Java RMI para invocar métodos remotos, definidos na interface `ServicoNoRMI`. A eleição de líder é implementada com um algoritmo de passagem de mensagem em anel.
 
-3. Tecnologias Utilizadas
-Linguagem: Java
+### Comunicação Multigrupo e Supercoordenação
 
-Build: Apache Maven
+Mesmo com middlewares diferentes, os grupos podem colaborar.
 
-Comunicação:
+  * **Descoberta e Comunicação:** Através do módulo `ComunicacaoIntergrupos`, os líderes eleitos de cada grupo utilizam **multicast UDP** para se descobrirem e trocarem mensagens de status e candidaturas.
+  * **Eleição de Supercoordenador:** Uma vez que os líderes se conhecem, eles realizam uma eleição para definir um único **Supercoordenador** global, que assume responsabilidades de coordenação em todo o sistema.
 
-gRPC: Para comunicação síncrona e eficiente entre os nós do Grupo A.
+### Tolerância a Falhas e Cliente Resiliente
 
-Java RMI (Remote Method Invocation): Para a chamada de métodos remotos entre os nós do Grupo B.
+  * **Recuperação de Falhas**: O sistema não apenas detecta falhas de nós e líderes, mas também possui mecanismos para registrar essas falhas e, se necessário, simular a substituição do nó.
+  * **Cliente Inteligente**: O `ClienteAutenticado` se conecta e recebe relatórios. Se o líder atual falha, o cliente detecta a ausência de comunicação e inicia um processo para encontrar e se autenticar com o novo líder, de forma transparente.
 
-Sockets TCP/IP: Para a comunicação do mecanismo de Heartbeat.
+## 3\. Estrutura do Projeto
 
-Sockets UDP Multicast: Para a descoberta de grupos e disseminação de relatórios de monitoramento.
-
-4. Estrutura do Projeto
+```
 Atividade_6/
 │
 ├── src/
 │   └── main/
 │       ├── java/
 │       │   └── monitoramento/
-│       │       ├── comum/         # Classes de utilidade compartilhadas
-│       │       ├── grupoa/        # Lógica específica do Grupo A (Bully, gRPC)
-│       │       ├── grupob/        # Lógica específica do Grupo B (Anel, RMI)
-│       │       ├── coordenacao/   # Classes para coordenação e multicast
-│       │       ├── autenticacao/  # Servidor de autenticação
-│       │       ├── intergrupo/    # Comunicação entre grupos
-│       │       ├── cliente/       # Clientes de monitoramento
-│       │       ├── Simulador.java # Ponto de entrada da simulação
-│       │       └── ...
+│       │       ├── comum/
+│       │       ├── grupoa/
+│       │       ├── grupob/
+│       │       ├── coordenacao/
+│       │       ├── autenticacao/
+│       │       ├── intergrupo/
+│       │       ├── cliente/
+│       │       └── Simulador.java
 │       └── proto/
-│           └── servicos.proto     # Definição do serviço gRPC
+│           └── servicos.proto
 │
-├── target/                        # Diretório gerado pelo Maven após a compilação
+├── target/
 │   └── sistema-distribuido-a6-1.0-SNAPSHOT-jar-with-dependencies.jar
 │
-├── COMPILAR.bat                   # Script para compilar o projeto com Maven
-├── EXECUTAR_TUDO.bat              # Script para compilar e executar a simulação completa
-├── pom.xml                        # Arquivo de configuração do Maven
-└── README.md                      # Este arquivo
-5. Como Executar (Passo a Passo)
-Siga estas instruções para compilar e rodar a simulação completa.
+├── COMPILAR.bat
+├── EXECUTAR_TUDO.bat
+├── pom.xml
+└── README.md
+```
 
-Passo 1: Compilar o Projeto e Gerar o Arquivo .jar
-Antes de tudo, é necessário compilar o código-fonte e empacotar a aplicação em um arquivo .jar que contenha todas as dependências. O script COMPILAR.bat foi criado para automatizar este processo usando o Maven.
+## 4\. Como Executar
 
-Abra um terminal ou prompt de comando na pasta raiz do projeto (Atividade_6).
+Para executar a simulação, siga os passos abaixo. Os scripts `.bat` foram criados para automatizar o processo no Windows. Pré-requisitos: Java JDK e Apache Maven instalados e configurados no sistema.
 
-Execute o script COMPILAR.bat:
+### Passo 1: Compilar o Projeto
 
-Bash
+Execute o script `COMPILAR.bat`. Ele utilizará o Maven para limpar compilações antigas, criar o diretório `target` e compilar todos os arquivos em um único arquivo `.jar` executável com todas as dependências.
 
+```bash
 COMPILAR.bat
-Este comando irá:
+```
 
-Limpar compilações antigas.
+### Passo 2: Iniciar a Simulação Completa
 
-Baixar as dependências definidas no pom.xml.
+Execute o script `EXECUTAR_TUDO.bat`. Este script irá:
 
-Compilar o código-fonte Java.
+1.  Chamar o `COMPILAR.bat` para garantir que o projeto está atualizado.
+2.  Abrir uma nova janela de terminal para o **Simulador**, que iniciará todos os nós.
+3.  Aguardar 10 segundos para a estabilização do sistema.
+4.  Abrir uma segunda janela de terminal para o **Cliente**, que irá se autenticar e começar a receber os relatórios.
 
-Gerar o código gRPC a partir do arquivo .proto.
+<!-- end list -->
 
-Empacotar tudo em um único arquivo executável chamado sistema-distribuido-a6-1.0-SNAPSHOT-jar-with-dependencies.jar dentro de uma nova pasta chamada target.
-
-Aguarde até que a mensagem "Compilacao e empacotamento finalizados com SUCESSO!" seja exibida.
-
-Passo 2: Executar a Simulação Completa
-O script EXECUTAR_TUDO.bat automatiza a inicialização de todos os componentes do sistema em janelas separadas.
-
-No mesmo terminal, execute o script EXECUTAR_TUDO.bat:
-
-Bash
-
+```bash
 EXECUTAR_TUDO.bat
-O que acontecerá:
+```
 
-Janela 1 (Compilador): O script primeiro chama o COMPILAR.bat novamente para garantir que a versão mais recente do código está sendo usada. Esta janela fechará automaticamente.
+### Passo 3: Iniciar o Sistema
+Após o EXECUTAR_TUDO.bat abrir as janelas do "Simulador dos Nós" e do "Cliente de Monitorização", a janela de terminal principal ficará em pausa.
 
-Janela 2 (Simulador dos Nós): Uma nova janela intitulada "Simulador dos Nós" será aberta. Ela iniciará o Simulador.java, que por sua vez inicializará todos os 6 nós (3 do Grupo A e 3 do Grupo B), o registro RMI e começará a simulação. Você verá os logs de inicialização de cada nó.
+1.   Primeiro, feche esta janela de terminal principal que está em pausa.
 
-Janela 3 (Cliente de Monitorização): Após uma pausa de 10 segundos para estabilização do sistema, uma terceira janela intitulada "Cliente de Monitorização" será aberta. Este é o ClienteAutenticado que tentará se autenticar e começará a exibir os relatórios de monitoramento enviados pelos líderes.
+2.   Em seguida, na janela que sobrou (a do Simulador), escolha a opção 'N' que vai aparecer para continuar. Depois disso, o sistema irá iniciar.
 
-Passo 3: Observar a Simulação e a Tolerância a Falhas
-Agora você pode observar o sistema em ação nas janelas abertas:
-
-Na janela do Simulador: Acompanhe os logs. O simulador anunciará quando está prestes a simular a falha do líder do Grupo A (Nó 3) e, posteriormente, do líder do Grupo B (Nó 6).
-
-Logs dos Nós: Você verá mensagens de detecção de falha, o início dos processos de eleição (Bully e Anel) e, finalmente, a eleição dos novos líderes (Nó 2 para o Grupo A e Nó 5 para o Grupo B).
-
-Na janela do Cliente: O cliente, que estava recebendo relatórios do líder original, detectará um timeout (ausência de relatórios). Ele então entrará em um estado de "tentando encontrar um novo líder", se re-autenticará com o novo líder eleito e voltará a receber os relatórios, demonstrando a resiliência do sistema.
-
-Passo 4: Encerrar a Simulação
-Quando a simulação chegar ao fim, a janela do "Simulador dos Nós" exibirá a mensagem "FINALIZANDO SIMULAÇÃO" e depois "SIMULAÇÃO CONCLUÍDA COM SUCESSO".
-
-Você pode fechar manualmente todas as janelas do prompt de comando que foram abertas.
+#### Nota Importante: A versão atual do Simulador.java é totalmente automatizada e não aguarda a entrada do teclado para iniciar. A simulação começará a rodar e a exibir os logs de eventos (como a eleição de líderes e falhas) imediatamente após a janela do simulador ser aberta..
